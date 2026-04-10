@@ -95,26 +95,42 @@ class IntrusionEdgeClassifier(nn.Module):
 def build_data(file_path, val_ratio=0.2, random_state=42):
     node_map, edge_index, edge_attr, edge_labels = parse_graphml(file_path)
 
-    # Total number of edges
-    num_edges = edge_index.size(1)
-    edge_indices = torch.arange(num_edges)
+    num_nodes = len(node_map)
+    all_nodes = torch.arange(num_nodes)
 
-    # Split edges into train/val
-    train_idx, val_idx = train_test_split(
-        edge_indices.numpy(),
+    # Split nodes (NOT edges)
+    train_nodes, val_nodes = train_test_split(
+        all_nodes.numpy(),
         test_size=val_ratio,
-        random_state=random_state,
-        stratify=edge_labels.numpy()  # keep label distribution
+        random_state=random_state
     )
 
-    # Create train Data
+    train_nodes = set(train_nodes)
+    val_nodes = set(val_nodes)
+
+    # Mask edges where BOTH nodes belong to the same split
+    train_mask = []
+    val_mask = []
+
+    for i in range(edge_index.size(1)):
+        src = edge_index[0, i].item()
+        dst = edge_index[1, i].item()
+
+        if src in train_nodes and dst in train_nodes:
+            train_mask.append(i)
+        elif src in val_nodes and dst in val_nodes:
+            val_mask.append(i)
+        # else: discard cross-split edges
+
+    train_idx = torch.tensor(train_mask)
+    val_idx = torch.tensor(val_mask)
+
     train_data = Data(
         edge_index=edge_index[:, train_idx],
         edge_attr=edge_attr[train_idx],
         edge_label=edge_labels[train_idx]
     )
 
-    # Create validation Data
     val_data = Data(
         edge_index=edge_index[:, val_idx],
         edge_attr=edge_attr[val_idx],
@@ -130,35 +146,53 @@ def build_data(file_path, val_ratio=0.2, random_state=42):
 # 4. Training Loop
 # ----------------------------
 def train(model, train_data, val_data, epochs=20, lr=1e-3, batch_size=256):
+    import torch
+    import torch.nn as nn
+    from torch.utils.data import DataLoader
+
     # Compute class weights from training labels
     labels = train_data.edge_label
     num_classes = int(labels.max().item()) + 1
     class_counts = torch.bincount(labels, minlength=num_classes).float()
-    class_weights = 1.0 / (class_counts + 1e-6)  # avoid division by zero
-    class_weights = class_weights / class_weights.sum() * num_classes  # normalize
+    class_weights = 1.0 / (class_counts + 1e-6)
+    class_weights = class_weights / class_weights.sum() * num_classes
 
     criterion = nn.CrossEntropyLoss(weight=class_weights)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
-    # Helper function to evaluate loss & accuracy on a Data object
     @torch.no_grad()
     def evaluate_data(data):
         model.eval()
         logits = model(data.edge_index, data.edge_attr)
         loss = criterion(logits, data.edge_label)
+
         pred = logits.argmax(dim=1)
-        acc = (pred == data.edge_label).float().mean()
-        return loss.item(), acc.item()
+        y_true = data.edge_label
+        y_pred = pred
+
+        acc = (y_pred == y_true).float().mean()
+
+        # Binary classification metrics
+        tp = ((y_pred == 1) & (y_true == 1)).sum().float()
+        fp = ((y_pred == 1) & (y_true == 0)).sum().float()
+        fn = ((y_pred == 0) & (y_true == 1)).sum().float()
+
+        precision = tp / (tp + fp + 1e-8)
+        recall = tp / (tp + fn + 1e-8)
+        f1 = 2 * (precision * recall) / (precision + recall + 1e-8)
+
+        return loss, acc, precision, recall, f1
 
     # Edge DataLoader
     edge_dataset = torch.utils.data.TensorDataset(
         train_data.edge_index.t(), train_data.edge_attr, train_data.edge_label
     )
-    loader = DataLoader(edge_dataset, batch_size=batch_size, shuffle=True) # type: ignore
+    loader = DataLoader(edge_dataset, batch_size=batch_size, shuffle=True)
 
     for epoch in range(1, epochs + 1):
         model.train()
         total_loss = 0
+
         for edge_idx_batch, edge_attr_batch, label_batch in loader:
             optimizer.zero_grad()
             edge_index_batch = edge_idx_batch.t().contiguous()
@@ -169,24 +203,49 @@ def train(model, train_data, val_data, epochs=20, lr=1e-3, batch_size=256):
             total_loss += loss.item() * edge_idx_batch.size(0)
 
         train_loss = total_loss / train_data.edge_label.size(0)
-        train_loss_val, train_acc = evaluate_data(train_data)
-        val_loss, val_acc = evaluate_data(val_data)
 
-        print(f"Epoch {epoch:02d} | "
-              f"Train Loss: {train_loss:.4f}, Acc: {train_acc:.4f} | "
-              f"Val Loss: {val_loss:.4f}, Acc: {val_acc:.4f}")
+        # Evaluate
+        train_loss_val, train_acc, train_prec, train_rec, train_f1 = evaluate_data(train_data)
+        val_loss, val_acc, val_prec, val_rec, val_f1 = evaluate_data(val_data)
 
+        print(
+            f"Epoch {epoch:02d} | "
+            f"Train Loss: {train_loss:.4f}, Acc: {train_acc:.4f}, "
+            f"P: {train_prec:.4f}, R: {train_rec:.4f}, F1: {train_f1:.4f} | "
+            f"Val Loss: {val_loss:.4f}, Acc: {val_acc:.4f}, "
+            f"P: {val_prec:.4f}, R: {val_rec:.4f}, F1: {val_f1:.4f}"
+        )
 # ----------------------------
 # 5. Evaluation
 # ----------------------------
 @torch.no_grad()
 def evaluate(model, data):
-    #add f1 scores with precision and recall
     model.eval()
-    logits = model(data.edge_index, data.edge_attr)
-    pred = logits.argmax(dim=1)
-    acc = (pred == data.edge_label).float().mean()
-    print(f"Accuracy: {acc:.4f}")
+    
+    with torch.no_grad():
+        logits = model(data.edge_index, data.edge_attr)
+        pred = logits.argmax(dim=1)
+
+        y_true = data.edge_label
+        y_pred = pred
+
+        # Accuracy
+        acc = (y_pred == y_true).float().mean()
+
+        # True Positives, False Positives, False Negatives
+        tp = ((y_pred == 1) & (y_true == 1)).sum().float()
+        fp = ((y_pred == 1) & (y_true == 0)).sum().float()
+        fn = ((y_pred == 0) & (y_true == 1)).sum().float()
+
+        # Precision, Recall, F1 (avoid division by zero)
+        precision = tp / (tp + fp + 1e-8)
+        recall = tp / (tp + fn + 1e-8)
+        f1 = 2 * (precision * recall) / (precision + recall + 1e-8)
+
+        print(f"Accuracy:  {acc:.4f}")
+        print(f"Precision: {precision:.4f}")
+        print(f"Recall:    {recall:.4f}")
+        print(f"F1 Score:  {f1:.4f}")
 
 # ----------------------------
 # 6. Example Usage
@@ -196,5 +255,5 @@ if __name__ == "__main__":
     train_data, val_data, num_nodes = build_data(file_path)
     model = IntrusionEdgeClassifier(num_nodes)
 
-    train(model, train_data=train_data, val_data=val_data, epochs=10, lr=1e-3)
+    train(model, train_data=train_data, val_data=val_data, epochs=50, lr=1e-3)
     evaluate(model, val_data)
