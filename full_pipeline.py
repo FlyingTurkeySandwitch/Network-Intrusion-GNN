@@ -181,6 +181,7 @@ def train(model, train_data, val_data, epochs=20, lr=1e-3, batch_size=256):
 # ----------------------------
 @torch.no_grad()
 def evaluate(model, data):
+    #add f1 scores with precision and recall
     model.eval()
     logits = model(data.edge_index, data.edge_attr)
     pred = logits.argmax(dim=1)
