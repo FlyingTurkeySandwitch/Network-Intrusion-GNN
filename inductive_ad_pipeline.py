@@ -80,7 +80,7 @@ class Config:
     # Anomaly threshold
     THRESHOLD       = 0.5     # tuned on validation set via F1-maximisation
 
-    SEED            = 42
+    SEED            = 423
     DEVICE          = "cuda" if torch.cuda.is_available() else "cpu"
 
 cfg = Config()
@@ -623,6 +623,7 @@ def main():
     # ── 7. Evaluate ──────────────────────────
     # Threshold tuned on calib (unseen nodes), applied to test (unseen nodes)
     threshold = full_evaluation(model, train_data, val_mask, calib_data, test_data)
+    #threshold = 0.5
  
     # ── 8. Score test edges ──────────────────
     results_df = score_edges(model, test_data, threshold, G_test)
