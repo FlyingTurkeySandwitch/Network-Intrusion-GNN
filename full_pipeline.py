@@ -252,8 +252,10 @@ def evaluate(model, data):
 # ----------------------------
 if __name__ == "__main__":
     file_path = 'data/0.1M-Stratified-Multi.graphml'
-    train_data, val_data, num_nodes = build_data(file_path)
+    train_data, val_data, num_nodes = build_data(file_path, 0.2, 12)
     model = IntrusionEdgeClassifier(num_nodes)
 
-    train(model, train_data=train_data, val_data=val_data, epochs=50, lr=1e-3)
+
+    print(train_data)
+    train(model, train_data=train_data, val_data=val_data, epochs=100, lr=1e-5)
     evaluate(model, val_data)
