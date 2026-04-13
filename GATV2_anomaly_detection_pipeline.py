@@ -65,7 +65,7 @@ class Config:
     # Training
     EPOCHS          = 1000
     BATCH_SIZE      = 32      # graphs per batch (for multi-graph settings)
-    LR              = 1e-5
+    LR              = 1e-3
     WEIGHT_DECAY    = 1e-4
     CLASS_WEIGHT    = 17.0    # upweight anomaly class (imbalanced labels)
 
