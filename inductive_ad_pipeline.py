@@ -71,7 +71,7 @@ class Config:
     BATCH_SIZE      = 32
     LR              = 1e-3
     WEIGHT_DECAY    = 1e-4
-    CLASS_WEIGHT    = 17.0    # tuned for 5% anomaly imbalance ratio
+    CLASS_WEIGHT    = 10.0    # tuned for 5% anomaly imbalance ratio
 
     # Inductive split — fraction of nodes held out entirely for test
     TEST_NODE_RATIO = 0.20    # 20% of nodes (and all their edges) unseen at train
@@ -80,7 +80,7 @@ class Config:
     # Anomaly threshold
     THRESHOLD       = 0.5     # tuned on validation set via F1-maximisation
 
-    SEED            = 423
+    SEED            = 42
     DEVICE          = "cuda" if torch.cuda.is_available() else "cpu"
 
 cfg = Config()

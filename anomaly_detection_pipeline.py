@@ -62,11 +62,11 @@ class Config:
     DROPOUT         = 0.3
 
     # Training
-    EPOCHS          = 1000
+    EPOCHS          = 500
     BATCH_SIZE      = 32      # graphs per batch (for multi-graph settings)
     LR              = 1e-3
     WEIGHT_DECAY    = 1e-4
-    CLASS_WEIGHT    = 17.0    # upweight anomaly class (imbalanced labels)
+    CLASS_WEIGHT    = 10.0    # upweight anomaly class (imbalanced labels)
 
     # Anomaly threshold
     THRESHOLD       = 0.5     # tuned on validation set via F1-maximisation
