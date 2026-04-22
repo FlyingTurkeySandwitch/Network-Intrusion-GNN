@@ -76,9 +76,9 @@ CONFIG = {
     "test_ratio": 0.15,
 
     # Class imbalance: None = auto-computed from training edges
-    "pos_weight": None,
+    "pos_weight": 10,
 
-    "seed": 42,
+    "seed": 1,
 }
 
 torch.manual_seed(CONFIG["seed"])
@@ -340,9 +340,11 @@ def split_nodes_inductively(data:        Data,
         in_val   = (((s in val_idx_set) and (s not in train_idx_set and d  in train_idx_set)) or \
                     ((d in val_idx_set) and (d not in train_idx_set and s in train_idx_set))) and\
                     (s not in test_idx_set)
+                    
         in_test  = (((s in test_idx_set) and (s not in train_idx_set and d in train_idx_set)) or \
                     ((d in test_idx_set) and (d not in train_idx_set and s in train_idx_set))) and\
                     (s not in val_idx_set)
+
 
         if in_train and in_val:
             raise(Exception('val train overlap detected'))
@@ -709,7 +711,6 @@ def main():
 
     # --- Inductive Node-Disjoint Split ---
     data = split_nodes_inductively(data, G, node_to_idx)
-
     # --- Train ---
     model = train(data, device)
 
