@@ -37,9 +37,11 @@ from sklearn.metrics import (roc_auc_score, precision_recall_curve,
 # ─────────────────────────────────────────────
 # 1. CONFIGURATION
 # ─────────────────────────────────────────────
+
+
 class Config:
     # Paths
-    GRAPHML_PATH   = "Network-Intrusion-GNN/data/0.1M-Stratified-Multi.graphml"
+    GRAPHML_PATH = "Network-Intrusion-GNN/data/0.1M-Stratified-Multi.graphml"
     MODEL_SAVE_PATH = "Network-Intrusion-GNN/models/gnn_anomaly_model_1.pt"
 
     # Edge feature keys (from GraphML schema)
@@ -48,31 +50,32 @@ class Config:
         "TotBytes",      # d1
         "SrcBytes",      # d2
         "Dur",           # d3
-        "Proto_encoded", # d4
+        "Proto_encoded",  # d4
         "Dir_encoded",   # d5
-        "State_encoded", # d6
+        "State_encoded",  # d6
     ]
     LABEL_KEY = "ActivityLabel"  # d7  (0 = normal, 1 = anomaly)
 
     # Model hyperparameters
-    NODE_FEAT_DIM   = 16    # learned node embedding dimension
-    EDGE_FEAT_DIM   = len(EDGE_FEATURES)
-    HIDDEN_DIM      = 64
-    NUM_LAYERS      = 3
-    DROPOUT         = 0.3
+    NODE_FEAT_DIM = 16    # learned node embedding dimension
+    EDGE_FEAT_DIM = len(EDGE_FEATURES)
+    HIDDEN_DIM = 64
+    NUM_LAYERS = 3
+    DROPOUT = 0.3
 
     # Training
-    EPOCHS          = 500
-    BATCH_SIZE      = 32      # graphs per batch (for multi-graph settings)
-    LR              = 1e-3
-    WEIGHT_DECAY    = 1e-4
-    CLASS_WEIGHT    = 10.0    # upweight anomaly class (imbalanced labels)
+    EPOCHS = 500
+    BATCH_SIZE = 32      # graphs per batch (for multi-graph settings)
+    LR = 1e-3
+    WEIGHT_DECAY = 1e-4
+    CLASS_WEIGHT = 10.0    # upweight anomaly class (imbalanced labels)
 
     # Anomaly threshold
-    THRESHOLD       = 0.5     # tuned on validation set via F1-maximisation
+    THRESHOLD = 0.5     # tuned on validation set via F1-maximisation
 
-    SEED            = 30
-    DEVICE          = "cuda" if torch.cuda.is_available() else "cpu"
+    SEED = 30
+    DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+
 
 cfg = Config()
 torch.manual_seed(cfg.SEED)
@@ -105,7 +108,7 @@ def inspect_graph(G: nx.Graph):
 
     for feat in cfg.EDGE_FEATURES:
         vals = [d.get(feat, np.nan) for _, _, d in G.edges(data=True)]
-        arr  = np.array(vals, dtype=float)
+        arr = np.array(vals, dtype=float)
         print(f"  {feat:20s}  mean={np.nanmean(arr):.4f}  "
               f"std={np.nanstd(arr):.4f}  "
               f"missing={np.isnan(arr).sum()}")
@@ -146,8 +149,9 @@ def build_node_features(G: nx.Graph, node_index: dict) -> torch.Tensor:
 
     node_feats = []
     for i in range(n):
-        deg_feat  = [degree.get(list(G.nodes())[i], 0)]
-        edge_agg  = np.mean(agg[i], axis=0) if agg[i] else np.zeros(cfg.EDGE_FEAT_DIM)
+        deg_feat = [degree.get(list(G.nodes())[i], 0)]
+        edge_agg = np.mean(agg[i], axis=0) if agg[i] else np.zeros(
+            cfg.EDGE_FEAT_DIM)
         node_feats.append(deg_feat + list(edge_agg))
 
     X = torch.tensor(node_feats, dtype=torch.float)
@@ -172,8 +176,8 @@ def build_edge_features_and_labels(
         feat_list.append([data.get(f, 0.0) for f in cfg.EDGE_FEATURES])
         label_list.append(int(data.get(cfg.LABEL_KEY, 0)))
 
-    edge_index  = torch.tensor([src_list, dst_list], dtype=torch.long)
-    edge_attr   = torch.tensor(feat_list,  dtype=torch.float)
+    edge_index = torch.tensor([src_list, dst_list], dtype=torch.long)
+    edge_attr = torch.tensor(feat_list,  dtype=torch.float)
     edge_labels = torch.tensor(label_list, dtype=torch.long)
 
     # Normalise edge features (fit scaler on train split only — see section 4)
@@ -208,11 +212,11 @@ def split_edges(
     Returns boolean masks for train / val / test.
     """
     indices = np.arange(num_edges)
-    y       = edge_labels.numpy()
+    y = edge_labels.numpy()
 
     train_idx, test_idx = train_test_split(
         indices, test_size=test_ratio, stratify=y, random_state=cfg.SEED)
-    train_idx, val_idx  = train_test_split(
+    train_idx, val_idx = train_test_split(
         train_idx, test_size=val_ratio / (1 - test_ratio),
         stratify=y[train_idx], random_state=cfg.SEED)
 
@@ -222,8 +226,8 @@ def split_edges(
         return m
 
     train_mask = to_mask(train_idx)
-    val_mask   = to_mask(val_idx)
-    test_mask  = to_mask(test_idx)
+    val_mask = to_mask(val_idx)
+    test_mask = to_mask(test_idx)
 
     print(f"[Split] Train: {train_mask.sum()}  "
           f"Val: {val_mask.sum()}  Test: {test_mask.sum()}")
@@ -238,6 +242,7 @@ class GNNEncoder(nn.Module):
     Multi-layer GNN encoder producing node embeddings.
     Uses GraphSAGE layers (swap for GATConv for attention-based aggregation).
     """
+
     def __init__(self, in_channels: int, hidden: int, num_layers: int,
                  dropout: float = 0.3):
         super().__init__()
@@ -268,6 +273,7 @@ class EdgeAnomalyClassifier(nn.Module):
 
     Input per edge: [z_u || z_v || z_u * z_v || e_uv]
     """
+
     def __init__(self, node_emb_dim: int, edge_feat_dim: int, hidden: int):
         super().__init__()
         in_dim = node_emb_dim * 3 + edge_feat_dim  # concat + Hadamard
@@ -283,7 +289,7 @@ class EdgeAnomalyClassifier(nn.Module):
     def forward(
         self,
         z: torch.Tensor,          # (N, emb_dim)
-        edge_index: torch.Tensor, # (2, E)
+        edge_index: torch.Tensor,  # (2, E)
         edge_attr: torch.Tensor,  # (E, F)
     ) -> torch.Tensor:            # (E,) logits
         z_src = z[edge_index[0]]
@@ -294,14 +300,15 @@ class EdgeAnomalyClassifier(nn.Module):
 
 class GNNAnomalyDetector(nn.Module):
     """Full model: GNN encoder + edge classifier."""
+
     def __init__(self, node_in: int, edge_in: int,
                  hidden: int, num_layers: int, dropout: float):
         super().__init__()
-        self.encoder    = GNNEncoder(node_in, hidden, num_layers, dropout)
+        self.encoder = GNNEncoder(node_in, hidden, num_layers, dropout)
         self.classifier = EdgeAnomalyClassifier(hidden, edge_in, hidden)
 
     def forward(self, x, edge_index, edge_attr):
-        z      = self.encoder(x, edge_index)
+        z = self.encoder(x, edge_index)
         logits = self.classifier(z, edge_index, edge_attr)
         return logits
 
@@ -317,11 +324,12 @@ def build_pyg_data(
 ) -> Data:
     """Wrap everything into a single PyG Data object."""
     return Data(
-        x          = node_features,
-        edge_index = edge_index,
-        edge_attr  = edge_attr,
-        y          = edge_labels,
+        x=node_features,
+        edge_index=edge_index,
+        edge_attr=edge_attr,
+        y=edge_labels,
     )
+
 
 def compute_loss(
     logits:      torch.Tensor,
@@ -335,6 +343,7 @@ def compute_loss(
         logits[mask], labels[mask].float(), pos_weight=weight
     )
 
+
 def train_epoch(
     model:      nn.Module,
     data:       Data,
@@ -344,7 +353,7 @@ def train_epoch(
     model.train()
     optimiser.zero_grad()
     logits = model(data.x, data.edge_index, data.edge_attr)
-    loss   = compute_loss(logits, data.y, train_mask)
+    loss = compute_loss(logits, data.y, train_mask)
     loss.backward()
     optimiser.step()
     return loss.item()
@@ -359,12 +368,13 @@ def evaluate(
 ) -> dict:
     model.eval()
     logits = model(data.x, data.edge_index, data.edge_attr)
-    probs  = torch.sigmoid(logits[mask]).cpu().numpy()
+    probs = torch.sigmoid(logits[mask]).cpu().numpy()
     labels = data.y[mask].cpu().numpy()
 
-    preds  = (probs >= threshold).astype(int)
-    roc    = roc_auc_score(labels, probs) if labels.sum() > 0 else float("nan")
-    ap     = average_precision_score(labels, probs) if labels.sum() > 0 else float("nan")
+    preds = (probs >= threshold).astype(int)
+    roc = roc_auc_score(labels, probs) if labels.sum() > 0 else float("nan")
+    ap = average_precision_score(
+        labels, probs) if labels.sum() > 0 else float("nan")
 
     return {"roc_auc": roc, "avg_precision": ap,
             "probs": probs, "labels": labels, "preds": preds}
@@ -374,8 +384,8 @@ def find_best_threshold(probs: np.ndarray, labels: np.ndarray) -> float:
     """Choose threshold that maximises F1 on the validation set."""
     precision, recall, thresholds = precision_recall_curve(labels, probs)
     f1_scores = 2 * precision * recall / (precision + recall + 1e-9)
-    best_idx   = np.argmax(f1_scores[:-1])
-    best_t     = thresholds[best_idx]
+    best_idx = np.argmax(f1_scores[:-1])
+    best_t = thresholds[best_idx]
     print(f"[Threshold] Best F1={f1_scores[best_idx]:.4f} at t={best_t:.4f}")
     return float(best_t)
 
@@ -392,11 +402,11 @@ def train(
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimiser, T_max=cfg.EPOCHS)
 
-    best_auc   = 0.0
-    patience   = 15
+    best_auc = 0.0
+    patience = 15
     no_improve = 0
 
-    data  = data.to(cfg.DEVICE)
+    data = data.to(cfg.DEVICE)
     model = model.to(cfg.DEVICE)
     t_mask = train_mask.to(cfg.DEVICE)
     v_mask = val_mask.to(cfg.DEVICE)
@@ -412,7 +422,7 @@ def train(
                   f"val_roc_auc={auc:.4f} | val_ap={val_metrics['avg_precision']:.4f}")
 
             if auc > best_auc:
-                best_auc   = auc
+                best_auc = auc
                 no_improve = 0
                 torch.save(model.state_dict(), cfg.MODEL_SAVE_PATH)
                 print(f"  ✓ Saved best model (auc={best_auc:.4f})")
@@ -437,15 +447,16 @@ def full_evaluation(
     val_mask:  torch.Tensor,
     test_mask: torch.Tensor,
 ):
-    data  = data.to(cfg.DEVICE)
+    data = data.to(cfg.DEVICE)
     model = model.to(cfg.DEVICE)
 
     # Tune threshold on validation set
-    val_metrics  = evaluate(model, data, val_mask.to(cfg.DEVICE))
-    best_t       = find_best_threshold(val_metrics["probs"], val_metrics["labels"])
+    val_metrics = evaluate(model, data, val_mask.to(cfg.DEVICE))
+    best_t = find_best_threshold(val_metrics["probs"], val_metrics["labels"])
 
     # Final test evaluation
-    test_metrics = evaluate(model, data, test_mask.to(cfg.DEVICE), threshold=best_t)
+    test_metrics = evaluate(
+        model, data, test_mask.to(cfg.DEVICE), threshold=best_t)
     print("\n[Test Results]")
     print(f"  ROC-AUC          : {test_metrics['roc_auc']:.4f}")
     print(f"  Avg Precision    : {test_metrics['avg_precision']:.4f}")
@@ -471,19 +482,19 @@ def score_edges(
     Useful for explainability, dashboards, or downstream alerting.
     """
     model.eval()
-    data   = data.to(cfg.DEVICE)
+    data = data.to(cfg.DEVICE)
     logits = model(data.x, data.edge_index, data.edge_attr)
-    probs  = torch.sigmoid(logits).cpu().numpy()
+    probs = torch.sigmoid(logits).cpu().numpy()
 
     edges = list(G.edges(data=True))
     records = []
     for i, (u, v, d) in enumerate(edges):
         records.append({
-            "src"          : u,
-            "dst"          : v,
-            "anomaly_prob" : probs[i],
-            "predicted"    : int(probs[i] >= threshold),
-            "true_label"   : int(d.get(cfg.LABEL_KEY, -1)),
+            "src": u,
+            "dst": v,
+            "anomaly_prob": probs[i],
+            "predicted": int(probs[i] >= threshold),
+            "true_label": int(d.get(cfg.LABEL_KEY, -1)),
         })
 
     df = pd.DataFrame(records).sort_values("anomaly_prob", ascending=False)
@@ -501,8 +512,8 @@ def main():
     inspect_graph(G)
 
     # ── 2. Feature engineering ───────────────
-    node_index  = build_node_index(G)
-    node_feats  = build_node_features(G, node_index)
+    node_index = build_node_index(G)
+    node_feats = build_node_features(G, node_index)
     edge_index, edge_attr, edge_labels = build_edge_features_and_labels(
         G, node_index)
 
@@ -519,11 +530,11 @@ def main():
     # ── 6. Instantiate model ─────────────────
     node_in_dim = node_feats.shape[1]
     model = GNNAnomalyDetector(
-        node_in   = node_in_dim,
-        edge_in   = cfg.EDGE_FEAT_DIM,
-        hidden    = cfg.HIDDEN_DIM,
-        num_layers= cfg.NUM_LAYERS,
-        dropout   = cfg.DROPOUT,
+        node_in=node_in_dim,
+        edge_in=cfg.EDGE_FEAT_DIM,
+        hidden=cfg.HIDDEN_DIM,
+        num_layers=cfg.NUM_LAYERS,
+        dropout=cfg.DROPOUT,
     )
     print(f"\n[Model] Parameters: "
           f"{sum(p.numel() for p in model.parameters()):,}")
